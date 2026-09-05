@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+python-dotenv
+streamlit
+langgraph
+langchain-core
+langchain-ollama
+langchain-text-splitters
+pypdf
+numpy
