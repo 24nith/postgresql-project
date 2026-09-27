@@ -13,3 +13,4 @@ langchain-ollama
 langchain-text-splitters
 pypdf
 numpy
+flask
