@@ -1,22 +1,12 @@
-import streamlit as st
+from flask import Flask, render_template, request, redirect, url_for, flash
 import os
 import psycopg2
 from pgvector.psycopg2 import register_vector
 import openai
 
-# Page configuration
-st.set_page_config(
-    page_title="PostgreSQL + pgvector Console",
-    page_icon="🐘",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "fallback-secret-key-for-session")
 
-# Initialize session state for navigation and data
-if "active_tab" not in st.session_state:
-    st.session_state.active_tab = "dashboard"
-
-# Helper to check if DATABASE_URL is present and not a placeholder
 def is_database_url_configured():
     url = os.environ.get("DATABASE_URL")
     if not url:
@@ -26,7 +16,6 @@ def is_database_url_configured():
         return False
     return True
 
-# Database Connection Helper
 def get_connection():
     if not is_database_url_configured():
         return None
@@ -38,7 +27,6 @@ def get_connection():
     except Exception as e:
         return None
 
-# Test live connection and query for dashboard status
 def check_live_database():
     if not is_database_url_configured():
         return False, "Not Configured"
@@ -54,7 +42,6 @@ def check_live_database():
     except Exception as e:
         return False, "Connection Error"
 
-# OpenAI Client Helper
 def get_openai_client():
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -64,164 +51,105 @@ def get_openai_client():
     except Exception as e:
         return None
 
-# Sidebar Navigation
-st.sidebar.title("🐘 PostgreSQL + pgvector")
-st.sidebar.caption("Professional Database & Vector Search Console")
-
-nav_selection = st.sidebar.radio(
-    "Navigation",
-    ["Dashboard", "Database Explorer", "Vector Search (RAG)", "SQL Query Console"],
-    index=0 if st.session_state.active_tab == "dashboard" else 
-          (1 if st.session_state.active_tab == "explorer" else 
-           (2 if st.session_state.active_tab == "rag" else 3))
-)
-
-if nav_selection == "Dashboard":
-    st.session_state.active_tab = "dashboard"
-elif nav_selection == "Database Explorer":
-    st.session_state.active_tab = "explorer"
-elif nav_selection == "Vector Search (RAG)":
-    st.session_state.active_tab = "rag"
-elif nav_selection == "SQL Query Console":
-    st.session_state.active_tab = "sql"
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Environment Status")
-is_live, db_status_text = check_live_database()
-db_status = db_status_text if is_live else ("Not Configured" if not is_database_url_configured() else "Error")
-ai_status = "Configured" if os.environ.get("OPENAI_API_KEY") else "Missing API Key"
-st.sidebar.text(f"Database: {db_status}")
-st.sidebar.text(f"OpenAI: {ai_status}")
-
-# Main Content Routing
-if st.session_state.active_tab == "dashboard":
-    st.title("PostgreSQL + pgvector")
-    st.caption("Professional Database & Vector Search Console")
+@app.route("/")
+def dashboard():
+    is_live, db_status_text = check_live_database()
+    db_status = db_status_text if is_live else ("Not Configured" if not is_database_url_configured() else "Error")
+    ai_status = "Configured" if os.environ.get("OPENAI_API_KEY") else "Missing API Key"
     
-    st.markdown("---")
+    tables_count = 0
+    tables = []
+    error_msg = None
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(label="Database Status", value=db_status)
-    with col2:
-        st.metric(label="Vector Extension", value="pgvector Enabled" if is_live else "Unknown")
-    with col3:
-        st.metric(label="RAG Engine", value=ai_status)
-        
-    st.markdown("### Welcome to your PostgreSQL & Vector Console")
-    st.write("""
-    This application allows you to manage your PostgreSQL database with `pgvector` extensions, 
-    explore tables, run custom SQL queries, and execute Retrieval-Augmented Generation (RAG) 
-    vector searches using OpenAI embeddings.
-    """)
-    
-    if not is_database_url_configured():
-        st.error("Configuration Error: `DATABASE_URL` is absent, invalid, or still set to a placeholder value. Please provide a valid PostgreSQL connection string.")
-    else:
+    if is_database_url_configured():
         conn = get_connection()
         if conn:
             try:
                 cur = conn.cursor()
                 cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public';")
-                tables = cur.fetchall()
-                cur.close()
-                conn.close()
-                
-                st.success(f"Successfully connected to PostgreSQL! Found {len(tables)} public tables.")
-                if tables:
-                    st.write("Existing tables:", ", ".join([t[0] for t in tables]))
-            except Exception as e:
-                st.error(f"Error querying database catalog: {e}")
-        else:
-            try:
-                # Try connecting directly to get the exact error without printing credentials
-                database_url = os.environ.get("DATABASE_URL")
-                psycopg2.connect(database_url)
-            except Exception as e:
-                st.error(f"Database connection error: {e}")
-
-elif st.session_state.active_tab == "explorer":
-    st.title("Database Explorer")
-    st.caption("Browse tables and inspect schema")
-    
-    if not is_database_url_configured():
-        st.error("Configuration Error: `DATABASE_URL` is absent, invalid, or still set to a placeholder value.")
-    else:
-        conn = get_connection()
-        if not conn:
-            try:
-                database_url = os.environ.get("DATABASE_URL")
-                psycopg2.connect(database_url)
-            except Exception as e:
-                st.error(f"Database connection error: {e}")
-        else:
-            try:
-                cur = conn.cursor()
-                cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name;")
                 tables = [t[0] for t in cur.fetchall()]
-                
-                if not tables:
-                    st.info("No tables found in the public schema.")
-                else:
-                    selected_table = st.selectbox("Select Table", tables)
-                    if selected_table:
-                        st.subheader(f"Contents of `{selected_table}`")
-                        cur.execute(f"SELECT * FROM {selected_table} LIMIT 100;")
-                        rows = cur.fetchall()
-                        colnames = [desc[0] for desc in cur.description]
-                        
-                        if rows:
-                            import pandas as pd
-                            df = pd.DataFrame(rows, columns=colnames)
-                            st.dataframe(df, use_container_width=True)
-                        else:
-                            st.info(f"Table `{selected_table}` is empty.")
+                tables_count = len(tables)
                 cur.close()
                 conn.close()
             except Exception as e:
-                st.error(f"Error exploring database: {e}")
+                error_msg = f"Error querying database catalog: {e}"
+        else:
+            try:
+                database_url = os.environ.get("DATABASE_URL")
+                psycopg2.connect(database_url)
+            except Exception as e:
+                error_msg = f"Database connection error: {e}"
+    else:
+        error_msg = "Configuration Error: DATABASE_URL is absent, invalid, or still set to a placeholder value."
 
-elif st.session_state.active_tab == "rag":
-    st.title("Vector Search (RAG)")
-    st.caption("Perform semantic search and generative responses using pgvector and OpenAI")
+    return render_template("dashboard.html", 
+                           db_status=db_status, 
+                           ai_status=ai_status, 
+                           is_live=is_live, 
+                           tables_count=tables_count, 
+                           tables=tables, 
+                           error_msg=error_msg)
+
+@app.route("/explorer", methods=["GET", "POST"])
+def explorer():
+    if not is_database_url_configured():
+        flash("Configuration Error: DATABASE_URL is absent, invalid, or still set to a placeholder value.", "danger")
+        return render_template("explorer.html", tables=[], selected_table=None, rows=[], colnames=[])
     
-    query_text = st.text_input("Enter your search query or question:")
+    conn = get_connection()
+    if not conn:
+        flash("Database connection error.", "danger")
+        return render_template("explorer.html", tables=[], selected_table=None, rows=[], colnames=[])
     
-    if st.button("Search & Generate"):
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name;")
+        tables = [t[0] for t in cur.fetchall()]
+        
+        selected_table = request.form.get("selected_table") or (tables[0] if tables else None)
+        rows = []
+        colnames = []
+        
+        if selected_table and selected_table in tables:
+            cur.execute(f"SELECT * FROM {selected_table} LIMIT 100;")
+            rows = cur.fetchall()
+            colnames = [desc[0] for desc in cur.description]
+            
+        cur.close()
+        conn.close()
+        return render_template("explorer.html", tables=tables, selected_table=selected_table, rows=rows, colnames=colnames)
+    except Exception as e:
+        flash(f"Error exploring database: {e}", "danger")
+        return render_template("explorer.html", tables=[], selected_table=None, rows=[], colnames=[])
+
+@app.route("/rag", methods=["GET", "POST"])
+def rag():
+    query_text = ""
+    results = None
+    if request.method == "POST":
+        query_text = request.form.get("query_text", "")
         if not query_text:
-            st.warning("Please enter a query.")
+            flash("Please enter a query.", "warning")
         elif not is_database_url_configured():
-            st.error("Configuration Error: `DATABASE_URL` is absent, invalid, or still set to a placeholder value.")
+            flash("Configuration Error: DATABASE_URL is absent, invalid, or still set to a placeholder value.", "danger")
         else:
             client = get_openai_client()
             conn = get_connection()
-            
             if not client:
-                st.error("OpenAI API key is missing or invalid.")
+                flash("OpenAI API key is missing or invalid.", "danger")
             elif not conn:
-                try:
-                    database_url = os.environ.get("DATABASE_URL")
-                    psycopg2.connect(database_url)
-                except Exception as e:
-                    st.error(f"Database connection error: {e}")
+                flash("Database connection error.", "danger")
             else:
                 try:
-                    with st.spinner("Generating embedding and searching vector space..."):
-                        # Generate embedding for query
-                        response = client.embeddings.create(
-                            input=query_text,
-                            model="text-embedding-ada-002"
-                        )
-                        query_embedding = response.data[0].embedding
-                        
-                        # Search database for similar vectors (assuming a standard table structure or demonstrating vector query)
-                        # Here we gracefully check if a vector-enabled table exists or provide instructions
-                        cur = conn.cursor()
-                        cur.execute("""
-                            SELECT table_name, column_name 
-                            FROM information_schema.columns
-                        """)
-                        cur.close()
-                        conn.close()
+                    response = client.embeddings.create(
+                        input=query_text,
+                        model="text-embedding-ada-002"
+                    )
+                    query_embedding = response.data[0].embedding
+                    flash("Embedding generated successfully! Vector search query prepared.", "success")
                 except Exception as e:
-                    st.error(f"Error during vector search: {e}")
+                    flash(f"Error during vector search: {e}", "danger")
+    return render_template("rag.html", query_text=query_text)
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)), debug=True)
