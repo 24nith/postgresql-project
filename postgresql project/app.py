@@ -220,3 +220,8 @@ elif st.session_state.active_tab == "rag":
                         cur.execute("""
                             SELECT table_name, column_name 
                             FROM information_schema.columns
+                        """)
+                        cur.close()
+                        conn.close()
+                except Exception as e:
+                    st.error(f"Error during vector search: {e}")
