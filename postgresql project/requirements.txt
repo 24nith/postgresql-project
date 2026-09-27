@@ -2,6 +2,9 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 psycopg[binary]
+psycopg2-binary
+pgvector
+openai
 python-dotenv
 streamlit
 langgraph
