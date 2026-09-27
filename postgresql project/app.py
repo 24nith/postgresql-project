@@ -16,18 +16,43 @@ st.set_page_config(
 if "active_tab" not in st.session_state:
     st.session_state.active_tab = "dashboard"
 
+# Helper to check if DATABASE_URL is present and not a placeholder
+def is_database_url_configured():
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        return False
+    placeholders = ["your_database_url", "postgres://user:password@host:port/dbname", "postgresql://user:password@host:port/dbname", "placeholder"]
+    if any(p in url.lower() for p in placeholders):
+        return False
+    return True
+
 # Database Connection Helper
 def get_connection():
-    database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
+    if not is_database_url_configured():
         return None
+    database_url = os.environ.get("DATABASE_URL")
     try:
         conn = psycopg2.connect(database_url)
         register_vector(conn)
         return conn
     except Exception as e:
-        st.error(f"Database connection error: {e}")
         return None
+
+# Test live connection and query for dashboard status
+def check_live_database():
+    if not is_database_url_configured():
+        return False, "Not Configured"
+    database_url = os.environ.get("DATABASE_URL")
+    try:
+        conn = psycopg2.connect(database_url)
+        cur = conn.cursor()
+        cur.execute("SELECT 1;")
+        cur.fetchone()
+        cur.close()
+        conn.close()
+        return True, "Connected"
+    except Exception as e:
+        return False, "Connection Error"
 
 # OpenAI Client Helper
 def get_openai_client():
@@ -62,7 +87,8 @@ elif nav_selection == "SQL Query Console":
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Environment Status")
-db_status = "Connected" if os.environ.get("DATABASE_URL") else "Not Configured"
+is_live, db_status_text = check_live_database()
+db_status = db_status_text if is_live else ("Not Configured" if not is_database_url_configured() else "Error")
 ai_status = "Configured" if os.environ.get("OPENAI_API_KEY") else "Missing API Key"
 st.sidebar.text(f"Database: {db_status}")
 st.sidebar.text(f"OpenAI: {ai_status}")
@@ -78,7 +104,7 @@ if st.session_state.active_tab == "dashboard":
     with col1:
         st.metric(label="Database Status", value=db_status)
     with col2:
-        st.metric(label="Vector Extension", value="pgvector Enabled" if db_status == "Connected" else "Unknown")
+        st.metric(label="Vector Extension", value="pgvector Enabled" if is_live else "Unknown")
     with col3:
         st.metric(label="RAG Engine", value=ai_status)
         
@@ -89,56 +115,71 @@ if st.session_state.active_tab == "dashboard":
     vector searches using OpenAI embeddings.
     """)
     
-    conn = get_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public';")
-            tables = cur.fetchall()
-            cur.close()
-            conn.close()
-            
-            st.success(f"Successfully connected to PostgreSQL! Found {len(tables)} public tables.")
-            if tables:
-                st.write("Existing tables:", ", ".join([t[0] for t in tables]))
-        except Exception as e:
-            st.error(f"Error querying database catalog: {e}")
+    if not is_database_url_configured():
+        st.error("Configuration Error: `DATABASE_URL` is absent, invalid, or still set to a placeholder value. Please provide a valid PostgreSQL connection string.")
     else:
-        st.warning("Please configure your `DATABASE_URL` environment variable to connect to your PostgreSQL database.")
+        conn = get_connection()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public';")
+                tables = cur.fetchall()
+                cur.close()
+                conn.close()
+                
+                st.success(f"Successfully connected to PostgreSQL! Found {len(tables)} public tables.")
+                if tables:
+                    st.write("Existing tables:", ", ".join([t[0] for t in tables]))
+            except Exception as e:
+                st.error(f"Error querying database catalog: {e}")
+        else:
+            try:
+                # Try connecting directly to get the exact error without printing credentials
+                database_url = os.environ.get("DATABASE_URL")
+                psycopg2.connect(database_url)
+            except Exception as e:
+                st.error(f"Database connection error: {e}")
 
 elif st.session_state.active_tab == "explorer":
     st.title("Database Explorer")
     st.caption("Browse tables and inspect schema")
     
-    conn = get_connection()
-    if not conn:
-        st.error("Database connection not available.")
+    if not is_database_url_configured():
+        st.error("Configuration Error: `DATABASE_URL` is absent, invalid, or still set to a placeholder value.")
     else:
-        try:
-            cur = conn.cursor()
-            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name;")
-            tables = [t[0] for t in cur.fetchall()]
-            
-            if not tables:
-                st.info("No tables found in the public schema.")
-            else:
-                selected_table = st.selectbox("Select Table", tables)
-                if selected_table:
-                    st.subheader(f"Contents of `{selected_table}`")
-                    cur.execute(f"SELECT * FROM {selected_table} LIMIT 100;")
-                    rows = cur.fetchall()
-                    colnames = [desc[0] for desc in cur.description]
-                    
-                    if rows:
-                        import pandas as pd
-                        df = pd.DataFrame(rows, columns=colnames)
-                        st.dataframe(df, use_container_width=True)
-                    else:
-                        st.info(f"Table `{selected_table}` is empty.")
-            cur.close()
-            conn.close()
-        except Exception as e:
-            st.error(f"Error exploring database: {e}")
+        conn = get_connection()
+        if not conn:
+            try:
+                database_url = os.environ.get("DATABASE_URL")
+                psycopg2.connect(database_url)
+            except Exception as e:
+                st.error(f"Database connection error: {e}")
+        else:
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' ORDER BY table_name;")
+                tables = [t[0] for t in cur.fetchall()]
+                
+                if not tables:
+                    st.info("No tables found in the public schema.")
+                else:
+                    selected_table = st.selectbox("Select Table", tables)
+                    if selected_table:
+                        st.subheader(f"Contents of `{selected_table}`")
+                        cur.execute(f"SELECT * FROM {selected_table} LIMIT 100;")
+                        rows = cur.fetchall()
+                        colnames = [desc[0] for desc in cur.description]
+                        
+                        if rows:
+                            import pandas as pd
+                            df = pd.DataFrame(rows, columns=colnames)
+                            st.dataframe(df, use_container_width=True)
+                        else:
+                            st.info(f"Table `{selected_table}` is empty.")
+                cur.close()
+                conn.close()
+            except Exception as e:
+                st.error(f"Error exploring database: {e}")
 
 elif st.session_state.active_tab == "rag":
     st.title("Vector Search (RAG)")
@@ -149,6 +190,8 @@ elif st.session_state.active_tab == "rag":
     if st.button("Search & Generate"):
         if not query_text:
             st.warning("Please enter a query.")
+        elif not is_database_url_configured():
+            st.error("Configuration Error: `DATABASE_URL` is absent, invalid, or still set to a placeholder value.")
         else:
             client = get_openai_client()
             conn = get_connection()
@@ -156,7 +199,11 @@ elif st.session_state.active_tab == "rag":
             if not client:
                 st.error("OpenAI API key is missing or invalid.")
             elif not conn:
-                st.error("Database connection not available.")
+                try:
+                    database_url = os.environ.get("DATABASE_URL")
+                    psycopg2.connect(database_url)
+                except Exception as e:
+                    st.error(f"Database connection error: {e}")
             else:
                 try:
                     with st.spinner("Generating embedding and searching vector space..."):
@@ -172,64 +219,4 @@ elif st.session_state.active_tab == "rag":
                         cur = conn.cursor()
                         cur.execute("""
                             SELECT table_name, column_name 
-                            FROM information_schema.columns 
-                            WHERE data_type = 'USER-DEFINED' AND table_schema = 'public';
-                        """)
-                        vector_columns = cur.fetchall()
-                        
-                        if not vector_columns:
-                            st.info("No vector columns found in the database. Ensure you have a table with a vector column to perform RAG searches.")
-                        else:
-                            st.write("Found vector columns:", vector_columns)
-                            # Perform sample vector similarity search on the first found vector table/column
-                            t_name, c_name = vector_columns[0][0], vector_columns[0][1]
-                            
-                            # Example similarity query using cosine distance (<=>)
-                            sql = f"SELECT * FROM {t_name} ORDER BY {c_name} <=> %s::vector LIMIT 5;"
-                            cur.execute(sql, (str(query_embedding),))
-                            results = cur.fetchall()
-                            colnames = [desc[0] for desc in cur.description]
-                            
-                            if results:
-                                st.subheader("Top Matching Contexts")
-                                import pandas as pd
-                                df_res = pd.DataFrame(results, columns=colnames)
-                                st.dataframe(df_res, use_container_width=True)
-                            else:
-                                st.warning("No matching vectors found.")
-                        
-                        cur.close()
-                        conn.close()
-                except Exception as e:
-                    st.error(f"Error during RAG execution: {e}")
-
-elif st.session_state.active_tab == "sql":
-    st.title("SQL Query Console")
-    st.caption("Execute arbitrary SQL queries against your PostgreSQL database")
-    
-    default_query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public';"
-    sql_query = st.text_area("SQL Query", value=default_query, height=150)
-    
-    if st.button("Execute Query"):
-        conn = get_connection()
-        if not conn:
-            st.error("Database connection not available.")
-        else:
-            try:
-                cur = conn.cursor()
-                cur.execute(sql_query)
-                
-                if cur.description:
-                    rows = cur.fetchall()
-                    colnames = [desc[0] for desc in cur.description]
-                    import pandas as pd
-                    df = pd.DataFrame(rows, columns=colnames)
-                    st.dataframe(df, use_container_width=True)
-                else:
-                    conn.commit()
-                    st.success("Query executed successfully (no results returned).")
-                
-                cur.close()
-                conn.close()
-            except Exception as e:
-                st.error(f"Error executing SQL: {e}")
+                            FROM information_schema.columns
