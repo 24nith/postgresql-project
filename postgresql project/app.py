@@ -1,13 +1,11 @@
-import os
-import json
-import time
-from flask import Flask, jsonify, request, render_template_string
+text text-transparent">
+                                        PostgreSQL + pgvector
+                                    </h1>
+                                    <p className="text-xs text-slate-400">Professional Database & Vector Search Console</p>
+                                </div>
+                            </div>
 
-app = Flask(__name__)
-
-# Database and deployment state for demonstration & diagnostic testing
-db_state = {
-    "connected": True,
-    "pgvector_extension": True,
-    "host": os.getenv("POSTGRES_HOST", "localhost"),
-    "port": os
+                            <nav className="flex space-x-2">
+                                <button
+                                    onClick={() => setActiveTab('dashboard')}
+                                    className={`px-4
