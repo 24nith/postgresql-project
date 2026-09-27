@@ -10,3 +10,4 @@ db_state = {
     "connected": True,
     "pgvector_extension": True,
     "host": os.getenv("POSTGRES_HOST", "localhost"),
+    "port": os
