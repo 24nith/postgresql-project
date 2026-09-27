@@ -222,4 +222,14 @@ elif st.session_state.active_tab == "sql":
                 if cur.description:
                     rows = cur.fetchall()
                     colnames = [desc[0] for desc in cur.description]
-                    import pandas as
+                    import pandas as pd
+                    df = pd.DataFrame(rows, columns=colnames)
+                    st.dataframe(df, use_container_width=True)
+                else:
+                    conn.commit()
+                    st.success("Query executed successfully (no results returned).")
+                
+                cur.close()
+                conn.close()
+            except Exception as e:
+                st.error(f"Error executing SQL: {e}")
