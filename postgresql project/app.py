@@ -51,6 +51,12 @@ def get_openai_client():
     except Exception as e:
         return None
 
+@app.context_processor
+def inject_logo():
+    # PostgreSQL / Vector database related SVG logo markup
+    logo_svg = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-500 inline-block align-middle mr-2"><ellipse cx="16" cy="10" rx="10" ry="4"></ellipse><path d="M6 10v6c0 2.21 4.48 4 10 4s10-1.79 10-4v-6"></path><path d="M6 16v6c0 2.21 4.48 4 10 4s10-1.79 10-4v-6"></path><circle cx="16" cy="22" r="1" fill="currentColor"></circle><circle cx="12" cy="14" r="1" fill="currentColor"></circle><circle cx="20" cy="14" r="1" fill="currentColor"></circle></svg>'''
+    return dict(app_logo=logo_svg)
+
 @app.route("/")
 def dashboard():
     is_live, db_status_text = check_live_database()
