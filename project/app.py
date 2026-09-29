@@ -3,9 +3,9 @@ import streamlit as st
 import psycopg2
 from urllib.parse import urlparse
 
-st.set_page_config(page_title="AI Engineering App", layout="wide")
+st.set_page_config(page_title="AI Engineering App", page_icon="🤖", layout="wide")
 
-st.title("AI Engineering Dashboard")
+st.title("🤖 AI Engineering Dashboard")
 
 # Retrieve and sanitize DATABASE_URL
 db_url = os.environ.get("DATABASE_URL")
