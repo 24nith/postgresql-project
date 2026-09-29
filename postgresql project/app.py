@@ -51,6 +51,12 @@ def get_openai_client():
     except Exception as e:
         return None
 
+@app.context_processor
+def inject_logo():
+    # PostgreSQL elephant / database related logo SVG (elephant silhouette with database cylinders)
+    logo_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="32" height="32" fill="currentColor"><path d="M78 40c-2-6-8-10-15-10h-2c-2-5-7-8-13-8-4 0-8 2-11 5-4-3-9-4-14-3-8 1-14 8-15 16-4 2-7 6-7 11 0 5 3 9 7 11v6c0 6 5 11 11 11h2c1 3 4 5 7 5h4c3 0 6-2 7-5h12c1 3 4 5 7 5h4c3 0 6-2 7-5h2c6 0 11-5 11-11v-5c4-2 7-6 7-11 0-5-3-9-7-11zm-51 3c0-3 3-6 6-6s6 3 6 6-3 6-6 6-6-3-6-6zm34 0c0-3 3-6 6-6s6 3 6 6-3 6-6 6-6-3-6-6zm-17 32h-4v-4h4v4zm18 0h-4v-4h4v4zm-9-15H42v-6h16v6z"/></svg>'
+    return dict(app_logo=logo_svg, app_name="PostgreSQL AI Studio")
+
 @app.route("/")
 def dashboard():
     is_live, db_status_text = check_live_database()
